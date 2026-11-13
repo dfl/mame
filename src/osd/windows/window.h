@@ -20,6 +20,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -81,6 +82,9 @@ public:
 	void hide_pointer() override;
 
 	void complete_destroy() override;
+
+	bool scripted_pointer_update(uint32_t key, int x, int y, uint32_t buttons);
+	bool scripted_pointer_leave(uint32_t key, bool abort);
 
 	// static
 
@@ -169,6 +173,7 @@ private:
 	std::vector<win_pointer_info>::iterator find_pointer(WPARAM wparam);
 	std::vector<win_pointer_info>::iterator map_mouse_pointer();
 	std::vector<win_pointer_info>::iterator find_mouse_pointer();
+	std::vector<scripted_pointer_info>::iterator map_scripted_pointer(uint32_t key);
 
 	win_window_info *   m_main;
 	bool                m_attached_mode;
@@ -181,6 +186,8 @@ private:
 	std::vector<std::pair<HANDLE, unsigned> > m_ptrdev_map;
 	std::vector<pointer_dev_info> m_ptrdev_info;
 	std::vector<win_pointer_info> m_active_pointers;
+	std::vector<scripted_pointer_info> m_scripted_pointers;
+	std::optional<uint32_t> m_scripted_ptrdev;
 
 	static POINT        s_saved_cursor_pos;
 };

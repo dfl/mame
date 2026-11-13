@@ -74,6 +74,8 @@ public:
 	void finger_down(SDL_FingerID finger, unsigned device, int x, int y);
 	void finger_up(SDL_FingerID finger, unsigned device, int x, int y);
 	void finger_moved(SDL_FingerID finger, unsigned device, int x, int y);
+	bool scripted_pointer_update(uint32_t key, uint32_t device, int x, int y, uint32_t buttons);
+	bool scripted_pointer_leave(uint32_t key, bool abort);
 
 private:
 	struct sdl_pointer_info : public pointer_info
@@ -105,6 +107,7 @@ private:
 	void measure_fps(int update);
 
 	std::vector<sdl_pointer_info>::iterator map_pointer(SDL_FingerID finger, unsigned device);
+	std::vector<scripted_pointer_info>::iterator map_scripted_pointer(uint32_t key, uint32_t device);
 
 	// window handle and info
 	int                 m_startmaximized;
@@ -129,6 +132,7 @@ private:
 	bool m_mouse_inside;
 	std::vector<pointer_dev_info> m_ptrdev_info;
 	std::vector<sdl_pointer_info> m_active_pointers;
+	std::vector<scripted_pointer_info> m_scripted_pointers;
 };
 
 #endif // MAME_OSD_SDL_WINDOW_H

@@ -761,6 +761,13 @@ manager.machine.render.ui_target
 manager.machine.video.snapshot_target
     Gets the render target used to produce snapshots and video recordings.
 
+Methods
+~~~~~~~
+
+target:create_scripted_pointer()
+    Creates a :ref:`scripted pointer <luascript-ref-scriptedpointer>` for the
+    render target.  The pointer is not active until it is first updated.
+
 Properties
 ~~~~~~~~~~
 
@@ -809,6 +816,73 @@ target.zoom_to_screen (read/write)
     A Boolean indicating whether the render target is configured to scale so
     that the emulated screen(s) fill as much of the output window/screen as
     possible.
+
+
+.. _luascript-ref-scriptedpointer:
+
+Scripted pointer
+----------------
+
+A mouse pointer driven by a script, as if the host system had reported mouse
+input in the window showing a render target.  The OSD layer allocates the
+pointer ID passed to the user interface and layout scripts, so scripted pointers
+can coexist with real pointers.  An active scripted pointer is aborted when it
+is garbage collected, so a script that stops before letting a pointer leave
+doesn't leave buttons held.
+
+Instantiation
+~~~~~~~~~~~~~
+
+target:create_scripted_pointer()
+    Creates a scripted pointer for a :ref:`render target
+    <luascript-ref-rendertarget>`.
+
+Methods
+~~~~~~~
+
+pointer:update(x, y, buttons)
+    Moves the pointer and sets the buttons it holds, making it active if it
+    isn't already.  The position is in output pixels (the same units as
+    ``target.width`` and ``target.height``), and ``buttons`` is a bit mask of
+    the buttons currently held (the primary button is bit 0).  Pressed and
+    released buttons and click counts are derived from the previous state of
+    the pointer.
+
+    Events are queued and processed in order once per emulated frame.  Layout
+    view pointer callbacks and the user interface see every event, but
+    clickable artwork inputs only see the pointer state at the end of each
+    frame, so a press and release in the same frame will not register as a
+    click on clickable artwork.  Click counts are derived from host time, as
+    for real pointers, so they can differ between runs when emulation speed
+    varies.  Raises an error if the OSD layer does not support scripted pointers
+    for the render target (for example hidden render targets), or no pointer
+    IDs are available.
+pointer:leave()
+    Indicates that the pointer left the render target normally, releasing any
+    buttons it held.  The pointer becomes inactive, and may be updated again to
+    make it active with a new pointer ID.  Raises an error if the pointer is not
+    active.
+pointer:abort()
+    Indicates that the pointer left the render target abnormally (for example if
+    the action it started should be cancelled).  Otherwise the same as
+    ``pointer:leave()``.
+
+Properties
+~~~~~~~~~~
+
+pointer.active (read-only)
+    A Boolean indicating whether the pointer is active.
+
+For example, running this in a coroutine clicks the primary button at the centre
+of the user interface render target::
+
+    local target = manager.machine.render.ui_target
+    local pointer = target:create_scripted_pointer()
+    local x, y = target.width // 2, target.height // 2
+    pointer:update(x, y, 0x01)
+    emu.wait_next_frame()
+    pointer:update(x, y, 0x00)
+    pointer:leave()
 
 
 .. _luascript-ref-rendercontainer:

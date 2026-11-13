@@ -95,6 +95,10 @@ public:
 	// input overridables
 	virtual void customize_input_type_list(std::vector<input_type_entry> &typelist) = 0;
 
+	// scripted pointers - OSD allocates pointer IDs, returns false if unsupported or failed
+	virtual bool scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons) = 0;
+	virtual bool scripted_pointer_leave(render_target &target, uint32_t key, bool abort) = 0;
+
 	// video overridables
 	virtual void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) = 0;
 	virtual std::vector<ui::menu_item> get_slider_list() = 0;

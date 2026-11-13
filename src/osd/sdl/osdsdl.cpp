@@ -858,3 +858,41 @@ unsigned sdl_osd_interface::map_pointer_device(SDL_TouchID device)
 	}
 	return devpos->second;
 }
+
+sdl_window_info *sdl_osd_interface::window_from_target(render_target const &target) const
+{
+	auto const window = std::find_if(
+			osd_common_t::window_list().begin(),
+			osd_common_t::window_list().end(),
+			[&target] (std::unique_ptr<osd_window> const &w)
+			{
+				return w->target() == &target;
+			});
+
+	if (window == osd_common_t::window_list().end())
+		return nullptr;
+
+	return &static_cast<sdl_window_info &>(**window);
+}
+
+bool sdl_osd_interface::scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons)
+{
+	sdl_window_info *const window(window_from_target(target));
+	if (!window)
+		return false;
+
+	// scripted pointers get a device number of their own so they're never grouped with real input
+	if (!m_scripted_ptrdev)
+		m_scripted_ptrdev = m_next_ptrdev++;
+
+	return window->scripted_pointer_update(key, *m_scripted_ptrdev, x, y, buttons);
+}
+
+bool sdl_osd_interface::scripted_pointer_leave(render_target &target, uint32_t key, bool abort)
+{
+	sdl_window_info *const window(window_from_target(target));
+	if (!window)
+		return false;
+
+	return window->scripted_pointer_leave(key, abort);
+}

@@ -615,6 +615,28 @@ void osd_common_t::customize_input_type_list(std::vector<input_type_entry> &type
 
 
 //-------------------------------------------------
+//  scripted_pointer_update - create or update a
+//  scripted pointer (not supported by default)
+//-------------------------------------------------
+
+bool osd_common_t::scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons)
+{
+	return false;
+}
+
+
+//-------------------------------------------------
+//  scripted_pointer_leave - end a scripted
+//  pointer (not supported by default)
+//-------------------------------------------------
+
+bool osd_common_t::scripted_pointer_leave(render_target &target, uint32_t key, bool abort)
+{
+	return false;
+}
+
+
+//-------------------------------------------------
 //  get_slider_list - allocate and populate a
 //  list of OS-dependent slider values.
 //-------------------------------------------------

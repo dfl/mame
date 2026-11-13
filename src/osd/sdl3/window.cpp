@@ -589,6 +589,101 @@ void sdl_window_info::finger_moved(SDL_FingerID finger, unsigned device, int x, 
 	}
 }
 
+bool sdl_window_info::scripted_pointer_update(uint32_t key, uint32_t device, int x, int y, uint32_t buttons)
+{
+	auto const info(map_scripted_pointer(key, device));
+	if (m_scripted_pointers.end() == info)
+		return false;
+
+	auto const pressed(buttons & ~info->buttons);
+	auto const released(info->buttons & ~buttons);
+
+	// detect multi-click actions
+	if (BIT(pressed, 0))
+	{
+		info->primary_down(
+				x,
+				y,
+				std::chrono::milliseconds(250),
+				CLICK_DISTANCE,
+				false,
+				m_ptrdev_info);
+	}
+	else if (BIT(info->buttons, 0))
+	{
+		info->check_primary_hold_drag(
+				x,
+				y,
+				std::chrono::milliseconds(250),
+				CLICK_DISTANCE);
+	}
+
+	// update info and push to UI manager
+	info->x = x;
+	info->y = y;
+	info->buttons = buttons;
+	target()->push_pointer_update(
+			osd::ui_event_handler::pointer::MOUSE,
+			info->index,
+			info->device,
+			x, y,
+			buttons, pressed, released, info->clickcnt);
+	return true;
+}
+
+bool sdl_window_info::scripted_pointer_leave(uint32_t key, bool abort)
+{
+	auto info(std::lower_bound(m_scripted_pointers.begin(), m_scripted_pointers.end(), key, &scripted_pointer_info::compare));
+	if ((m_scripted_pointers.end() == info) || (info->key != key))
+		return false;
+
+	// leaving implicitly releases buttons, so check hold/drag if necessary
+	if (BIT(info->buttons, 0) && (0 < info->clickcnt))
+	{
+		if (!abort)
+		{
+			auto const now(std::chrono::steady_clock::now());
+			auto const exp(std::chrono::milliseconds(250) + info->pressed);
+			int const dx(info->x - info->pressedx);
+			int const dy(info->y - info->pressedy);
+			int const distance((dx * dx) + (dy * dy));
+			if ((exp < now) || (CLICK_DISTANCE < distance))
+				info->clickcnt = -info->clickcnt;
+		}
+		else
+		{
+			info->clickcnt = -info->clickcnt;
+		}
+	}
+
+	// push to UI manager
+	if (abort)
+	{
+		target()->push_pointer_abort(
+				osd::ui_event_handler::pointer::MOUSE,
+				info->index,
+				info->device,
+				info->x, info->y,
+				info->buttons, info->clickcnt);
+	}
+	else
+	{
+		target()->push_pointer_leave(
+				osd::ui_event_handler::pointer::MOUSE,
+				info->index,
+				info->device,
+				info->x, info->y,
+				info->buttons, info->clickcnt);
+	}
+
+	// dump pointer data
+	m_pointer_mask &= ~(decltype(m_pointer_mask)(1) << info->index);
+	if (info->index < m_next_pointer)
+		m_next_pointer = info->index;
+	m_scripted_pointers.erase(info);
+	return true;
+}
+
 //============================================================
 //  sdlwindow_video_window_create
 //  (main thread)
@@ -1337,6 +1432,41 @@ std::vector<sdl_window_info::sdl_pointer_info>::iterator sdl_window_info::map_po
 	{
 		osd_printf_error("sdl_window_info: error allocating pointer data\n");
 		return m_active_pointers.end();
+	}
+}
+
+std::vector<sdl_window_info::scripted_pointer_info>::iterator sdl_window_info::map_scripted_pointer(uint32_t key, uint32_t device)
+{
+	auto found(std::lower_bound(m_scripted_pointers.begin(), m_scripted_pointers.end(), key, &scripted_pointer_info::compare));
+	if ((m_scripted_pointers.end() != found) && (found->key == key))
+		return found;
+
+	if ((sizeof(m_next_pointer) * 8) <= m_next_pointer)
+	{
+		assert(~decltype(m_pointer_mask)(0) == m_pointer_mask);
+		osd_printf_warning("sdl_window_info: exceeded maximum number of active pointers\n");
+		return m_scripted_pointers.end();
+	}
+	assert(!BIT(m_pointer_mask, m_next_pointer));
+
+	try
+	{
+		found = m_scripted_pointers.emplace(
+				found,
+				scripted_pointer_info(key, m_next_pointer, device));
+		m_pointer_mask |= decltype(m_pointer_mask)(1) << m_next_pointer;
+		do
+		{
+			++m_next_pointer;
+		}
+		while (((sizeof(m_next_pointer) * 8) > m_next_pointer) && BIT(m_pointer_mask, m_next_pointer));
+
+		return found;
+	}
+	catch (std::bad_alloc const &)
+	{
+		osd_printf_error("sdl_window_info: error allocating pointer data\n");
+		return m_scripted_pointers.end();
 	}
 }
 

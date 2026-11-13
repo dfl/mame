@@ -16,6 +16,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <string>
@@ -152,6 +153,10 @@ public:
 	// input overridables
 	virtual void customize_input_type_list(std::vector<input_type_entry> &typelist) override;
 
+	// scripted pointers
+	virtual bool scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons) override;
+	virtual bool scripted_pointer_leave(render_target &target, uint32_t key, bool abort) override;
+
 	virtual bool video_init() override;
 	virtual bool window_init() override;
 
@@ -192,6 +197,7 @@ private:
 	template <typename T> sdl_window_info *focus_window(T const &event) const;
 
 	unsigned map_pointer_device(SDL_TouchID device);
+	sdl_window_info *window_from_target(render_target const &target) const;
 
 	sdl_options &m_options;
 	sdl_window_info *m_focus_window;
@@ -205,6 +211,7 @@ private:
 	bool m_enable_touch;
 	unsigned m_next_ptrdev;
 	std::vector<std::pair<SDL_TouchID, unsigned> > m_ptrdev_map;
+	std::optional<uint32_t> m_scripted_ptrdev;
 };
 
 //============================================================

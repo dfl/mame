@@ -157,6 +157,26 @@ int windows_osd_interface::window_count()
 	return osd_common_t::window_list().size();
 }
 
+bool windows_osd_interface::scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons)
+{
+	for (auto const &window : osd_common_t::window_list())
+	{
+		if (window->target() == &target)
+			return dynamic_cast<win_window_info &>(*window).scripted_pointer_update(key, x, y, buttons);
+	}
+	return false;
+}
+
+bool windows_osd_interface::scripted_pointer_leave(render_target &target, uint32_t key, bool abort)
+{
+	for (auto const &window : osd_common_t::window_list())
+	{
+		if (window->target() == &target)
+			return dynamic_cast<win_window_info &>(*window).scripted_pointer_leave(key, abort);
+	}
+	return false;
+}
+
 void windows_osd_interface::add_audio_to_recording(const int16_t *buffer, int samples_this_frame)
 {
 	auto const &window = osd_common_t::window_list().front(); // We only record on the first window
@@ -2381,6 +2401,140 @@ std::vector<win_window_info::win_pointer_info>::iterator win_window_info::map_mo
 		osd_printf_error("win_window_info: error allocating pointer data\n");
 		return m_active_pointers.end();
 	}
+}
+
+std::vector<win_window_info::scripted_pointer_info>::iterator win_window_info::map_scripted_pointer(uint32_t key)
+{
+	auto found(std::lower_bound(m_scripted_pointers.begin(), m_scripted_pointers.end(), key, &scripted_pointer_info::compare));
+	if ((m_scripted_pointers.end() != found) && (found->key == key))
+		return found;
+
+	if ((sizeof(m_next_pointer) * 8) <= m_next_pointer)
+	{
+		assert(~decltype(m_pointer_mask)(0) == m_pointer_mask);
+		osd_printf_warning("win_window_info: exceeded maximum number of active pointers\n");
+		return m_scripted_pointers.end();
+	}
+	assert(!BIT(m_pointer_mask, m_next_pointer));
+
+	try
+	{
+		// scripted pointers get a device number of their own so they're never grouped with real input
+		if (!m_scripted_ptrdev)
+			m_scripted_ptrdev = m_next_ptrdev++;
+
+		found = m_scripted_pointers.emplace(
+				found,
+				scripted_pointer_info(key, m_next_pointer, *m_scripted_ptrdev));
+		m_pointer_mask |= decltype(m_pointer_mask)(1) << m_next_pointer;
+		do
+		{
+			++m_next_pointer;
+		}
+		while (((sizeof(m_next_pointer) * 8) > m_next_pointer) && BIT(m_pointer_mask, m_next_pointer));
+
+		return found;
+	}
+	catch (std::bad_alloc const &)
+	{
+		osd_printf_error("win_window_info: error allocating pointer data\n");
+		return m_scripted_pointers.end();
+	}
+}
+
+bool win_window_info::scripted_pointer_update(uint32_t key, int x, int y, uint32_t buttons)
+{
+	auto const info(map_scripted_pointer(key));
+	if (m_scripted_pointers.end() == info)
+		return false;
+
+	auto const pressed(buttons & ~info->buttons);
+	auto const released(info->buttons & ~buttons);
+
+	// detect multi-click actions
+	if (BIT(pressed, 0))
+	{
+		info->primary_down(
+				x,
+				y,
+				std::chrono::milliseconds(GetDoubleClickTime()),
+				CLICK_DISTANCE,
+				false,
+				m_ptrdev_info);
+	}
+	else if (BIT(info->buttons, 0))
+	{
+		info->check_primary_hold_drag(
+				x,
+				y,
+				std::chrono::milliseconds(GetDoubleClickTime()),
+				CLICK_DISTANCE);
+	}
+
+	// update info and push to UI manager
+	info->x = x;
+	info->y = y;
+	info->buttons = buttons;
+	target()->push_pointer_update(
+			osd::ui_event_handler::pointer::MOUSE,
+			info->index,
+			info->device,
+			x, y,
+			buttons, pressed, released, info->clickcnt);
+	return true;
+}
+
+bool win_window_info::scripted_pointer_leave(uint32_t key, bool abort)
+{
+	auto info(std::lower_bound(m_scripted_pointers.begin(), m_scripted_pointers.end(), key, &scripted_pointer_info::compare));
+	if ((m_scripted_pointers.end() == info) || (info->key != key))
+		return false;
+
+	// leaving implicitly releases buttons, so check hold/drag if necessary
+	if (BIT(info->buttons, 0) && (0 < info->clickcnt))
+	{
+		if (!abort)
+		{
+			auto const now(std::chrono::steady_clock::now());
+			auto const exp(std::chrono::milliseconds(GetDoubleClickTime()) + info->pressed);
+			int const dx(info->x - info->pressedx);
+			int const dy(info->y - info->pressedy);
+			int const distance((dx * dx) + (dy * dy));
+			if ((exp < now) || (CLICK_DISTANCE < distance))
+				info->clickcnt = -info->clickcnt;
+		}
+		else
+		{
+			info->clickcnt = -info->clickcnt;
+		}
+	}
+
+	// push to UI manager
+	if (abort)
+	{
+		target()->push_pointer_abort(
+				osd::ui_event_handler::pointer::MOUSE,
+				info->index,
+				info->device,
+				info->x, info->y,
+				info->buttons, info->clickcnt);
+	}
+	else
+	{
+		target()->push_pointer_leave(
+				osd::ui_event_handler::pointer::MOUSE,
+				info->index,
+				info->device,
+				info->x, info->y,
+				info->buttons, info->clickcnt);
+	}
+
+	// dump pointer data
+	m_pointer_mask &= ~(decltype(m_pointer_mask)(1) << info->index);
+	if (info->index < m_next_pointer)
+		m_next_pointer = info->index;
+	m_scripted_pointers.erase(info);
+	return true;
 }
 
 std::vector<win_window_info::win_pointer_info>::iterator win_window_info::find_mouse_pointer()

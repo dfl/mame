@@ -20,10 +20,12 @@
 
 #include "interface/uievents.h"
 #include "ioprocs.h"
+#include "osdepend.h"
 
 #include <algorithm>
 #include <atomic>
 #include <iterator>
+#include <memory>
 
 
 namespace {
@@ -196,6 +198,66 @@ auto make_bitmap_specific_type(sol::table registry, char const *name)
 	result["bpp"] = sol::property(&T::bpp);
 	return result;
 }
+
+
+//-------------------------------------------------
+//  scripted_pointer - Lua handle for a pointer
+//  managed by the OSD layer; an active pointer is
+//  aborted when the handle is garbage collected
+//-------------------------------------------------
+
+class scripted_pointer
+{
+public:
+	scripted_pointer(render_target &target, u32 key, util::notifier<> &on_stop) :
+		m_target(&target),
+		m_key(key),
+		m_active(false),
+		m_stop_subscription(on_stop.subscribe(delegate<void ()>(
+				[this] ()
+				{
+					// the OSD layer discards scripted pointers along with the window
+					m_target = nullptr;
+					m_active = false;
+				})))
+	{
+	}
+
+	scripted_pointer(scripted_pointer const &) = delete;
+	scripted_pointer &operator=(scripted_pointer const &) = delete;
+
+	~scripted_pointer()
+	{
+		if (m_active)
+			osd().scripted_pointer_leave(*m_target, m_key, true);
+	}
+
+	bool active() const { return m_active; }
+
+	bool update(s32 x, s32 y, u32 buttons)
+	{
+		if (!m_target || !osd().scripted_pointer_update(*m_target, m_key, x, y, buttons))
+			return false;
+		m_active = true;
+		return true;
+	}
+
+	bool leave(bool abort)
+	{
+		if (!m_active || !osd().scripted_pointer_leave(*m_target, m_key, abort))
+			return false;
+		m_active = false;
+		return true;
+	}
+
+private:
+	osd_interface &osd() const { return m_target->manager().machine().osd(); }
+
+	render_target *m_target;
+	u32 const m_key;
+	bool m_active;
+	util::notifier_subscription m_stop_subscription;
+};
 
 } // anonymous namespace
 
@@ -1119,6 +1181,37 @@ void lua_engine::initialize_render(sol::table &emu)
 	target_type["visibility_mask"] = sol::property(&render_target::visibility_mask);
 	target_type["screen_overlay"] = sol::property(&render_target::screen_overlay_enabled, &render_target::set_screen_overlay_enabled);
 	target_type["zoom_to_screen"] = sol::property(&render_target::zoom_to_screen, &render_target::set_zoom_to_screen);
+	target_type.set_function(
+			"create_scripted_pointer",
+			[this, next_key = u32(0)] (render_target &t) mutable
+			{
+				return std::make_unique<scripted_pointer>(t, next_key++, m_notifiers->on_stop);
+			});
+
+
+	auto scripted_pointer_type = sol().registry().new_usertype<scripted_pointer>("scripted_pointer", sol::no_constructor);
+	scripted_pointer_type.set_function(
+			"update",
+			[] (scripted_pointer &p, sol::this_state s, s32 x, s32 y, u32 buttons)
+			{
+				if (!p.update(x, y, buttons))
+					luaL_error(s, "Scripted pointer update failed (not supported for this render target, or no pointer IDs available)");
+			});
+	scripted_pointer_type.set_function(
+			"leave",
+			[] (scripted_pointer &p, sol::this_state s)
+			{
+				if (!p.leave(false))
+					luaL_error(s, "Scripted pointer leave failed (pointer is not active)");
+			});
+	scripted_pointer_type.set_function(
+			"abort",
+			[] (scripted_pointer &p, sol::this_state s)
+			{
+				if (!p.leave(true))
+					luaL_error(s, "Scripted pointer abort failed (pointer is not active)");
+			});
+	scripted_pointer_type["active"] = sol::property(&scripted_pointer::active);
 
 
 	auto render_container_type = sol().registry().new_usertype<render_container>("render_container", sol::no_constructor);

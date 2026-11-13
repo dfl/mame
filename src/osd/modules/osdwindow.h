@@ -156,6 +156,20 @@ protected:
 		int clickcnt;
 	};
 
+	struct scripted_pointer_info : public pointer_info
+	{
+		static constexpr bool compare(scripted_pointer_info const &info, uint32_t key) { return info.key < key; }
+
+		scripted_pointer_info(scripted_pointer_info const &) = default;
+		scripted_pointer_info(scripted_pointer_info &&) = default;
+		scripted_pointer_info &operator=(scripted_pointer_info const &) = default;
+		scripted_pointer_info &operator=(scripted_pointer_info &&) = default;
+
+		scripted_pointer_info(uint32_t k, uint32_t i, uint32_t d) : pointer_info(i, d), key(k) { }
+
+		uint32_t key;
+	};
+
 	osd_window(
 			running_machine &machine,
 			render_module &renderprovider,

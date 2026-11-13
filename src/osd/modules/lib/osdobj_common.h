@@ -226,6 +226,10 @@ public:
 	// input overridables
 	virtual void customize_input_type_list(std::vector<input_type_entry> &typelist) override;
 
+	// scripted pointers
+	virtual bool scripted_pointer_update(render_target &target, uint32_t key, int32_t x, int32_t y, uint32_t buttons) override;
+	virtual bool scripted_pointer_leave(render_target &target, uint32_t key, bool abort) override;
+
 	// video overridables
 	virtual void add_audio_to_recording(const int16_t *buffer, int samples_this_frame) override;
 	virtual std::vector<ui::menu_item> get_slider_list() override;
